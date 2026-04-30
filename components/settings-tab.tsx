@@ -10,12 +10,26 @@ import {
   Info,
   ChevronRight,
   ExternalLink,
+  type LucideIcon,
 } from "lucide-react";
+
+type SettingsItem = {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  status: "success" | "default" | "warning" | "error";
+  action?: "link";
+};
+
+type SettingsGroup = {
+  title: string;
+  items: SettingsItem[];
+};
 
 export function SettingsTab() {
   const { logout } = useAuth();
 
-  const settingsGroups = [
+  const settingsGroups: SettingsGroup[] = [
     {
       title: "Account",
       items: [
@@ -23,21 +37,19 @@ export function SettingsTab() {
           icon: User,
           label: "Manager Profile",
           value: "Operations Manager",
-          action: undefined,
+          status: "default",
         },
         {
           icon: Mail,
           label: "Email Account",
           value: "Connected",
-          status: "success" as const,
-          action: undefined,
+          status: "success",
         },
         {
           icon: Sparkles,
           label: "AI Assistant",
           value: "Claude",
-          status: "success" as const,
-          action: undefined,
+          status: "success",
         },
       ],
     },
@@ -48,13 +60,14 @@ export function SettingsTab() {
           icon: Info,
           label: "App Version",
           value: "1.0.0",
-          action: undefined,
+          status: "default",
         },
         {
           icon: Shield,
           label: "Privacy Policy",
-          value: undefined,
-          action: "link" as const,
+          value: "",
+          status: "default",
+          action: "link",
         },
       ],
     },
