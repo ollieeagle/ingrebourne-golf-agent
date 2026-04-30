@@ -3,8 +3,8 @@
 import { useState } from "react";
 import {
   Sparkles,
-  Instagram,
-  Twitter,
+  Camera,
+  AtSign,
   Globe,
   Copy,
   Check,
@@ -12,14 +12,15 @@ import {
   Hash,
   MessageSquare,
   Loader2,
+  type LucideIcon,
 } from "lucide-react";
 
 type Platform = "instagram" | "twitter" | "facebook";
 type ContentType = "event" | "promotion" | "update" | "weather" | "membership";
 
-const platforms: { id: Platform; label: string; icon: typeof Instagram }[] = [
-  { id: "instagram", label: "Instagram", icon: Instagram },
-  { id: "twitter", label: "Twitter", icon: Twitter },
+const platforms: { id: Platform; label: string; icon: LucideIcon }[] = [
+  { id: "instagram", label: "Instagram", icon: Camera },
+  { id: "twitter", label: "Twitter", icon: AtSign },
   { id: "facebook", label: "Facebook", icon: Globe },
 ];
 
