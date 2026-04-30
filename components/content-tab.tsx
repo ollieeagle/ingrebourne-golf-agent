@@ -5,7 +5,7 @@ import {
   Sparkles,
   Instagram,
   Twitter,
-  Facebook,
+  Globe,
   Copy,
   Check,
   ImageIcon,
@@ -20,7 +20,7 @@ type ContentType = "event" | "promotion" | "update" | "weather" | "membership";
 const platforms: { id: Platform; label: string; icon: typeof Instagram }[] = [
   { id: "instagram", label: "Instagram", icon: Instagram },
   { id: "twitter", label: "Twitter", icon: Twitter },
-  { id: "facebook", label: "Facebook", icon: Facebook },
+  { id: "facebook", label: "Facebook", icon: Globe },
 ];
 
 const contentTypes: { id: ContentType; label: string }[] = [
