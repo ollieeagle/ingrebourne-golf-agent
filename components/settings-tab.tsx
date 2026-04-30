@@ -42,7 +42,7 @@ export function SettingsTab() {
         {
           icon: Mail,
           label: "Email Account",
-          value: "Connected",
+          value: "Gmail",
           status: "success",
         },
         {

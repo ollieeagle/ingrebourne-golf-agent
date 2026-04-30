@@ -44,7 +44,7 @@ export function InboxTab() {
   const [selectedEmail, setSelectedEmail] = useState<EmailWithAI | null>(null);
   const [copiedReply, setCopiedReply] = useState(false);
 
-  const { data, error, isLoading, mutate } = useSWR<{ emails: Email[]; error?: string }>(
+  const { data, error, isLoading, mutate } = useSWR<{ emails: Email[]; error?: string; needsAuth?: boolean }>(
     "/api/emails",
     fetcher,
     { revalidateOnFocus: false }
@@ -238,6 +238,20 @@ export function InboxTab() {
           <div className="flex flex-col items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mb-3" />
             <p className="text-muted-foreground">Loading emails...</p>
+          </div>
+        ) : data?.needsAuth ? (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <Mail className="h-12 w-12 text-muted-foreground mb-3" />
+            <p className="text-foreground font-semibold mb-2">Connect Your Gmail</p>
+            <p className="text-muted-foreground text-sm mb-4">
+              Connect your Gmail account to view and manage emails with AI assistance.
+            </p>
+            <a
+              href="/api/auth/google"
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
+            >
+              Connect Gmail
+            </a>
           </div>
         ) : error || data?.error ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">

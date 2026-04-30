@@ -1,98 +1,151 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+
+interface GmailMessage {
+  id: string;
+  threadId: string;
+}
+
+interface GmailMessageDetail {
+  id: string;
+  snippet: string;
+  internalDate: string;
+  labelIds: string[];
+  payload: {
+    headers: Array<{ name: string; value: string }>;
+  };
+}
 
 interface TokenResponse {
   access_token: string;
-  token_type: string;
   expires_in: number;
 }
 
-interface GraphEmail {
-  id: string;
-  subject: string;
-  from: {
-    emailAddress: {
-      name: string;
-      address: string;
-    };
-  };
-  receivedDateTime: string;
-  bodyPreview: string;
-  isRead: boolean;
+async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) return null;
+
+  try {
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data: TokenResponse = await response.json();
+    return data.access_token;
+  } catch {
+    return null;
+  }
 }
 
-interface GraphResponse {
-  value: GraphEmail[];
+function getHeader(headers: Array<{ name: string; value: string }>, name: string): string {
+  const header = headers.find((h) => h.name.toLowerCase() === name.toLowerCase());
+  return header?.value || "";
 }
 
-async function getAccessToken(): Promise<string> {
-  const tenantId = process.env.AZURE_TENANT_ID;
-  const clientId = process.env.AZURE_CLIENT_ID;
-  const clientSecret = process.env.AZURE_CLIENT_SECRET;
-
-  if (!tenantId || !clientId || !clientSecret) {
-    throw new Error("Missing Azure credentials");
+function parseFromHeader(from: string): { name: string; address: string } {
+  const match = from.match(/^(.+?)\s*<(.+?)>$/);
+  if (match) {
+    return { name: match[1].trim().replace(/^"|"$/g, ""), address: match[2] };
   }
-
-  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    scope: "https://graph.microsoft.com/.default",
-    grant_type: "client_credentials",
-  });
-
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params,
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to get access token: ${error}`);
-  }
-
-  const data: TokenResponse = await response.json();
-  return data.access_token;
+  return { name: from, address: from };
 }
 
 export async function GET() {
   try {
-    const outlookEmail = process.env.OUTLOOK_EMAIL;
+    const cookieStore = await cookies();
+    let accessToken = cookieStore.get("gmail_access_token")?.value;
+    const refreshToken = cookieStore.get("gmail_refresh_token")?.value;
 
-    if (!outlookEmail) {
+    if (!accessToken && refreshToken) {
+      const newToken = await refreshAccessToken(refreshToken);
+      if (newToken) {
+        accessToken = newToken;
+      }
+    }
+
+    if (!accessToken) {
       return NextResponse.json(
-        { error: "OUTLOOK_EMAIL not configured" },
-        { status: 500 }
+        { error: "Not authenticated. Please connect your Gmail account.", needsAuth: true },
+        { status: 401 }
       );
     }
 
-    const accessToken = await getAccessToken();
+    // Fetch message list
+    const listResponse = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&labelIds=INBOX",
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
 
-    const graphUrl = `https://graph.microsoft.com/v1.0/users/${outlookEmail}/messages?$top=20&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,isRead`;
+    if (!listResponse.ok) {
+      if (listResponse.status === 401 && refreshToken) {
+        const newToken = await refreshAccessToken(refreshToken);
+        if (newToken) {
+          // Retry with new token
+          const retryResponse = await fetch(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&labelIds=INBOX",
+            { headers: { Authorization: `Bearer ${newToken}` } }
+          );
+          if (!retryResponse.ok) {
+            return NextResponse.json(
+              { error: "Failed to fetch emails", needsAuth: true },
+              { status: 401 }
+            );
+          }
+        }
+      }
+      return NextResponse.json(
+        { error: "Failed to fetch emails", needsAuth: true },
+        { status: listResponse.status }
+      );
+    }
 
-    const response = await fetch(graphUrl, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
+    const listData = await listResponse.json();
+    const messages: GmailMessage[] = listData.messages || [];
+
+    // Fetch details for each message
+    const emailPromises = messages.slice(0, 20).map(async (msg) => {
+      const detailResponse = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      if (!detailResponse.ok) return null;
+
+      const detail: GmailMessageDetail = await detailResponse.json();
+      const fromHeader = getHeader(detail.payload.headers, "From");
+      const parsed = parseFromHeader(fromHeader);
+
+      return {
+        id: detail.id,
+        subject: getHeader(detail.payload.headers, "Subject") || "(No subject)",
+        from: {
+          emailAddress: {
+            name: parsed.name,
+            address: parsed.address,
+          },
+        },
+        receivedDateTime: new Date(parseInt(detail.internalDate)).toISOString(),
+        bodyPreview: detail.snippet,
+        isRead: !detail.labelIds.includes("UNREAD"),
+      };
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("Graph API error:", error);
-      return NextResponse.json(
-        { error: "Failed to fetch emails from Microsoft Graph" },
-        { status: response.status }
-      );
-    }
+    const emails = (await Promise.all(emailPromises)).filter(Boolean);
 
-    const data: GraphResponse = await response.json();
-
-    return NextResponse.json({ emails: data.value });
+    return NextResponse.json({ emails });
   } catch (error) {
     console.error("Email fetch error:", error);
     return NextResponse.json(
